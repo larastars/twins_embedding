@@ -53,6 +53,8 @@ def negative_log_likelihood_multiple(params, max_flux, fluxerr, color_law):
 	print(opt.x)
 	"""
 	dm, color = params[:len(max_flux)], params[len(max_flux):]
+	color_law = np.array(color_law).reshape(1, len(color_law))
+	color_law = np.repeat(color_law, len(max_flux), axis = 1)
 	scale = 10**(0.4 * (dm + color * color_law))
 	scale_flux = max_flux * scale
 	scale_fluxerr = fluxerr * scale
