@@ -46,13 +46,13 @@ def negative_log_likelihood_multiple(params, max_flux, fluxerr, color_law):
 
 	To implement this:
 	opt = minimize(negative_log_likelihood_multiple,
-				np.zeros([2, len(self.maximum_flux)]),
+				np.zeros([2*len(self.maximum_flux)]),
 				args = (self.maximum_flux,
 						self.maximum_fluxerr,
 						self.rbtl_color_law))
 	print(opt.x)
 	"""
-	dm, color = params
+	dm, color = params[:len(max_flux)], params[len(max_flux):]
 	scale = 10**(0.4 * (dm + color * color_law))
 	scale_flux = max_flux * scale
 	scale_fluxerr = fluxerr * scale
