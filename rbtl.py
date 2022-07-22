@@ -22,7 +22,7 @@ def negative_log_likelihood_multiple(params, max_flux, fluxerr, color_law):
 		fluxerr:
 			corresponds to max flux
 		color_law:
-			fitzgerald dust law
+			fitzpatrick dust law
 
 
 
