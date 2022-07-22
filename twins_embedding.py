@@ -14,12 +14,16 @@ import sys
 from tqdm.autonotebook import tqdm
 from idrtools import Dataset, math
 import pandas as pd
+from scipy.optimize import minimize
 
 
 from settings import default_settings
 from manifold_gp import ManifoldGaussianProcess
 import utils
 import specind
+import math
+import warnings
+warnings.filterwarnings("ignore")
 
 
 from astropy.cosmology import WMAP9 as cosmo
@@ -105,11 +109,12 @@ class TwinsEmbeddingAnalysis:
 
     def run_analysis(self):
         """Run the full analysis"""
-        #self.load_dataset()
-        self.load_dataset_sim()
+        self.load_dataset()
+        #self.load_dataset_sim()
 
         self.print_verbose("Estimating the spectra at maximum light...")
         self.model_differential_evolution()
+        #return a,b
 
         if self.settings['test_no_interpolation']:
             # As a test, use the spectrum near maximum light directly rather than doing
@@ -120,7 +125,7 @@ class TwinsEmbeddingAnalysis:
             self.maximum_fluxerr = self.fluxerr[self.center_mask]
 
         self.print_verbose("Reading between the lines...")
-        self.read_between_the_lines()
+        cache_result, our_params,our_rbtl = self.read_between_the_lines()
 
         # self.print_verbose("Building masks...")
         # self.build_masks()
@@ -141,12 +146,14 @@ class TwinsEmbeddingAnalysis:
         # self.residuals_salt = self.fit_salt_magnitude_residuals()
 
         # self.print_verbose("Done!")
+        return cache_result, our_params, our_rbtl
 
-    
+
+
     def load_dataset_sim(self):
 
         #load dataset
-        with open('twins_sne_z=0.5.pickle', 'rb') as f:
+        with open('twins_sne_z=0.05.pickle', 'rb') as f:
             data = pickle.load(f)
 
         #wave and phases are the same for all SNe
@@ -155,7 +162,6 @@ class TwinsEmbeddingAnalysis:
         for i in data:
             flux.append(np.array(i['fluxes']))
 
-    
         self.attrition_enough_spectra = 0
         self.attrition_total_spectra = 0
         self.attrition_salt_daymax = 0
@@ -163,58 +169,77 @@ class TwinsEmbeddingAnalysis:
         self.attrition_explicit = 0
         self.attrition_usable = 0
 
-
-        center_mask = []
-       
-        for p in data[0]['phases']:
-            if p in range(- int(self.settings['phase_range']), int(self.settings['phase_range'])+1):
-                center_mask.append(True) 
-                self.attrition_usable += 1
-                self.attrition_total_spectra += 1
-                self.attrition_range += 1
-            else:
-                center_mask.append(False) 
-                self.attrition_total_spectra += 1
-            self.attrition_enough_spectra += 1
+        #rework this logic 
+        # center_mask = []
+        # for p in data[0]['phases']:
+        #     if p in range(- int(self.settings['phase_range']), int(self.settings['phase_range'])+1):
+        #         center_mask.append(True) 
+        #         self.attrition_usable += 1
+        #         self.attrition_total_spectra += 1
+        #         self.attrition_range += 1
+        #     else:
+        #         center_mask.append(False) 
+        #         self.attrition_total_spectra += 1
+        #     self.attrition_enough_spectra += 1
 
         #select supernove with phase -5,5
         phase_selection = []
         flux_selection = []
-        
-
-        for sn in data:
-           phase_list = []
-           flux_list = []
-           used_phases = []
-           for p in range(len(sn['phases'])):
-               if sn['phases'][p] in range(-4,5):
-                   used_phases.append(sn['phases'][p])
-                   phase_list.append(sn['phases'][p])
-                   flux_list.append(sn['fluxes'][p])
-                
-           phase_selection.append(phase_list)
-           flux_selection.append(flux_list)
-     
-        #phase_selection = data[0]['phases']
-        #flux_selection = flux
-        redshift = 0.5
-        factor = rf_from_obs_factor(redshift)
-        flux_dopp_shift = np.array(flux_selection)* factor 
-        
-        velocity = redshift_to_velocity(redshift)
-        rest_frame_wave = apply_relativistic_doppler_shift(data[0]['wave'] * u.angstrom, -1*velocity)
+        center_mask = []
 
         #create target list with SN names
         target = []
         spectra = []
-        for i in range(len(data)):
-            curr = 'SN_' + str(i+1) 
-            target.append(curr)
-            spectra.append(curr)
 
+        target_index = 1
+        spectra_index = 1
 
+        target_map = []
+        target_map_index = 0
+        #iterate through SNe
+        for sn in data:
 
-        # Restrict Spectra 
+           self.attrition_enough_spectra += 1
+           used_phases = []
+           used_mask = []
+           #iterate throguh phases for each SNe
+           for p in range(len(sn['phases'])):
+               self.attrition_total_spectra += 1
+               #check if those phases are in range 
+               if int(sn['phases'][p]) in range(-4,5):
+                   phase_selection.append(float(sn['phases'][p]))
+                   used_phases.append(float(sn['phases'][p]))
+                   flux_selection.append(sn['fluxes'][p])
+                   used_mask.append(False)
+
+                   spectra.append('SN_' + str(target_index) + str(spectra_index))
+                   spectra_index +=1
+                   target_map.append(target_index)
+                   self.attrition_usable += 1
+                   self.attrition_range += 1
+                   
+
+           target.append('SN_' + str(target_index))
+           target_index +=1
+
+            #check the page closest to the center 
+           index = np.argmin(np.abs(np.array(used_phases)))
+           used_mask[index] = True 
+           center_mask.extend(used_mask)
+
+     
+        redshift = 0.5
+        factor = rf_from_obs_factor(redshift)
+
+        #mutiply by factor 
+        flux_dopp_shift = []
+        for i in flux_selection:
+            flux_dopp_shift.append(np.array(i) * factor )
+
+        #flux_dopp_shift = np.array(flux_selection) * factor 
+     
+        velocity = redshift_to_velocity(redshift)
+        rest_frame_wave = apply_relativistic_doppler_shift(data[0]['wave'] * u.angstrom, -1*velocity)
 
 
         # Build a hash that is unique to the dataset that we are working on.
@@ -238,7 +263,7 @@ class TwinsEmbeddingAnalysis:
         self.redshifts = np.full((len(target), ), redshift)
         self.salt_phases = np.array(phase_selection)#np.array(data[0]['phases'])
         self.salt_x1 = np.zeros(len(target))
-        self.target_map = np.array([i for i in range(len(target))])
+        self.target_map = np.array(target_map)
         self.spectra = spectra 
         self.center_mask = np.array(center_mask)
 
@@ -246,10 +271,9 @@ class TwinsEmbeddingAnalysis:
         self.helio_redshifts = np.full((len(target), ), redshift)
         self.redshift_errs = np.full((len(target),), 0.0000001)
 
-
         self.dataset_hash = md5(hash_info.encode("ascii")).hexdigest()
-     
 
+    
         return rest_frame_wave,flux_dopp_shift,data[0]['phases'],center_mask
      
     def load_dataset(self):
@@ -446,8 +470,8 @@ class TwinsEmbeddingAnalysis:
         print(len(self.salt_x1))
         print(self.salt_x1[0])
         print("\n")
-
         """
+     
        
 
     def _check_spectrum(self, spectrum):
@@ -515,6 +539,72 @@ class TwinsEmbeddingAnalysis:
         if self.settings['verbosity'] >= minimum_verbosity:
             print(*args)
 
+
+    def interpolate_spectra_to_peak(self, result):  
+        c1 = result["phase_slope"]   
+        c2 = result["phase_quadratic"]
+        
+        #print(len(self.flux)) #SNE 10
+        #print(len(self.flux[0])) #spectrum 288
+ 
+        #Apply the formula mag = -2.5 * math.log10(flux) to flux for each SNe at each phase 
+        mag = []
+        bin_list = []
+        for i in range(len(self.flux)):
+            bin_list = []
+            for j in range(len(self.flux[i])):
+                scalar_mag = -2.5 * math.log10(self.flux[i][j])
+                bin_list.append(scalar_mag)
+                
+            mag.append(bin_list)
+
+        SNe_peak = []
+        #Iterate through each SNe 
+        for i in range(len(mag)):
+            #Apply m(0) = m(p) - p * c1 - p^2 * c2
+            p = self.salt_phases[i]
+            m_zero = mag[i] - (p * c1) - (p**2 * c2)
+            SNe_peak.append(np.array(m_zero))
+
+
+        #convert from mag to flux
+        SNe_flux = []
+        SNe_flux_bin = [] 
+
+        for i in range(len(SNe_peak)):
+            SNe_flux_bin = [] 
+            for j in range(len(SNe_peak[i])):
+                scalar_flux = 10**(-0.4*SNe_peak[i][j]) #-2.5 * math.log10(SNe_peak[i][j][k])
+                SNe_flux_bin.append(scalar_flux)
+            SNe_flux.append(SNe_flux_bin)
+
+        #find m_gray
+        #check if cachehas this value 
+        mu, sigma = 0, 0.02 # mean and standard deviation
+        N = np.random.normal(mu, sigma**2, 1000)
+
+
+        """
+        print(len(SNe_peak))
+        print(len(SNe_peak[1]))
+        print(len(SNe_peak[1][0]))
+        print('\n')
+
+        print(len(mag))
+        print(len(mag[1]))
+        print(len(mag[1][0]))
+        print('\n')
+
+        print(len(self.flux)) #SNE 10
+        print(len(self.flux[1])) #phase 1/2
+        print(len(self.flux[1][0])) #spectrum 288
+        """
+        #return mag, SNe_peak
+        return self.flux, SNe_flux
+
+
+
+    
     def model_differential_evolution(self, use_cache=True):
         """Estimate the spectra for each of our SNe Ia at maximum light.
 
@@ -556,14 +646,20 @@ class TwinsEmbeddingAnalysis:
         if use_cache:
             cache_result = utils.load_stan_result(self.differential_evolution_hash)
           #  print("dte")
-          #  print(cache_result)
+            print(cache_result.keys())
             if cache_result is not None:
-                print(cache_result)
+
+                #new code 
+                a,b = self.interpolate_spectra_to_peak(cache_result)
+
                 # Found the cached result. Load it and don't redo the fit.
                 self.differential_evolution_result = cache_result
-                self.flux = cache_result["maximum_flux"]
+                #comment this out when removing the return 
+                self.maximum_flux = cache_result["maximum_flux"]
                 self.maximum_fluxerr = cache_result["maximum_fluxerr"]
-                return
+
+            
+                return a, b
 
         num_targets = len(self.targets)
         num_spectra = len(self.flux)
@@ -581,12 +677,8 @@ class TwinsEmbeddingAnalysis:
         )
 
         phase_coefficients = np.zeros((num_spectra, num_phase_coefficients))
-       # print(num_spectra)
-       # print(phase_coefficients)
-
-       # print(self.salt_phases[0])
-       # print(num_phase_coefficients)
-        for i, phase in enumerate(self.salt_phases[0]):
+   
+        for i, phase in enumerate(self.salt_phases):
             phase_scale = np.abs(
                 (num_phase_coefficients / 2) * (phase / self.settings['phase_range'])
             )
@@ -604,17 +696,12 @@ class TwinsEmbeddingAnalysis:
                     phase_bin = num_phase_coefficients // 2 + j
                 else:
                     phase_bin = num_phase_coefficients // 2 - 1 - j
-              #  print(i)
-              #  print(phase_bin)
-              #  print(phase_coefficients)
-               # print(self.salt_phases)
-               # print(self.center_mask)
-               #3 print('i')
-               # print(i)
-               # print('phase_bin')
-               # print(phase_bin)
+
+
                 phase_coefficients[i, phase_bin] = weight
+
         print("success")
+
         def stan_init():
             init_params = {
                 "phase_slope": np.zeros(num_wave),
@@ -662,7 +749,17 @@ class TwinsEmbeddingAnalysis:
         # Save the output to cache it for future runs.
         utils.save_stan_result(self.differential_evolution_hash, result)
 
-    def read_between_the_lines(self, use_cache=False):
+
+    def negative_log_likelihood(self, params, max_flux, fluxerr, color_law, mean_flux, intrinsic_dispersion):
+        dm, color = params
+        scale = 10**(0.4 * (dm + color * color_law))
+        scale_flux = max_flux * scale
+        scale_fluxerr = fluxerr * scale
+        sigma_sq = (intrinsic_dispersion * mean_flux)**2 + scale_fluxerr**2
+
+        return np.sum(0.5 * (scale_flux - mean_flux)**2 / (sigma_sq) + np.log(np.sqrt(sigma_sq)))
+
+    def read_between_the_lines(self, use_cache=True):
         """Run the read between the lines algorithm.
 
         This algorithm estimates the brightnesses and colors of every spectrum
@@ -682,7 +779,7 @@ class TwinsEmbeddingAnalysis:
             verbosity=self.settings['verbosity']
         )
 
-        # Build a hash that is unique to this dataset/analysis
+        #Build a hash that is unique to this dataset/analysis
         hash_info = (
             self.differential_evolution_hash
             + ';' + model_hash
@@ -699,44 +796,71 @@ class TwinsEmbeddingAnalysis:
           #  print("rbtl")
           #  print(cache_result)
             if cache_result is not None:
+                #print(cache_result)
                 # Found the cached result. Load it and don't redo the fit.
                 self._parse_rbtl_result(cache_result)
-                return
 
         use_targets = self.targets
 
         num_targets = len(use_targets)
         num_wave = len(self.wave)
 
-        def stan_init():
-            # Use the spectrum closest to maximum as a first guess of the
-            # target's spectrum.
-            start_mean_flux = np.mean(self.maximum_flux, axis=0)
-            start_fractional_dispersion = 0.1 * np.ones(num_wave)
 
-            return {
-                "mean_flux": start_mean_flux,
-                "fractional_dispersion": start_fractional_dispersion,
-                "colors_raw": np.zeros(num_targets - 1),
-                "magnitudes_raw": np.zeros(num_targets - 1),
-            }
+        #RBTL in python 
+       # self.fractional_dispersion = np.std(self.maximum_flux, axis = 0) / np.mean(self.maximum_flux, axis=0)
+        self.fractional_dispersion = cache_result["fractional_dispersion"]
+        mean_flux = cache_result["mean_flux"]
+        our_params = {'fractional_dispersion': self.fractional_dispersion,
+                        'mean_flux': mean_flux}
 
-        stan_data = {
-            "num_targets": num_targets,
-            "num_wave": num_wave,
-            "maximum_flux": self.maximum_flux,
-            "maximum_fluxerr": self.maximum_fluxerr,
-            "color_law": self.rbtl_color_law,
-        }
+        our_rbtl = {}
+        for i in range(len(self.maximum_flux)):
+            opt = minimize(self.negative_log_likelihood, 
+                    [0., 0.], 
+                    args = (self.maximum_flux[i],
+                        self.maximum_fluxerr[i],
+                        self.rbtl_color_law,
+                        mean_flux,
+                        self.fractional_dispersion
+                        )
+                    )
 
-        sys.stdout.flush()
-        result = model.optimizing(data=stan_data, init=stan_init, verbose=True,
-                                  iter=5000)
+            # if self.targets[i] in ('SNF20050728-006','SNF20050729-002','SNF20050821-007','SNF20050927-005',
+            #                         'SNF20051003-004','SNF20060511-014','SNF20060512-001','SNF20060512-002','SNF20060521-001','SNF20060521-008'):
+            
+            our_rbtl[self.targets[i]] = opt.x
 
-        # Save the output to cache it for future runs.
-        utils.save_stan_result(self.rbtl_hash, result)
+        return cache_result, our_params, our_rbtl
 
-        # Parse the result
+        # def stan_init():
+        #     # Use the spectrum closest to maximum as a first guess of the
+        #     # target's spectrum.
+        #     start_mean_flux = np.mean(self.maximum_flux, axis=0)
+        #     start_fractional_dispersion = 0.1 * np.ones(num_wave)
+
+        #     return {
+        #         "mean_flux": start_mean_flux,
+        #         "fractional_dispersion": start_fractional_dispersion,
+        #         "colors_raw": np.zeros(num_targets - 1),
+        #         "magnitudes_raw": np.zeros(num_targets - 1),
+        #     }
+
+        # stan_data = {
+        #     "num_targets": num_targets,
+        #     "num_wave": num_wave,
+        #    # "maximum_flux": self.maximum_flux,
+        #     "maximum_fluxerr": self.maximum_fluxerr,
+        #     "color_law": self.rbtl_color_law,
+        # }
+
+        # sys.stdout.flush()
+        # result = model.optimizing(data=stan_data, init=stan_init, verbose=True,
+        #                           iter=5000)
+
+        # # Save the output to cache it for future runs.
+        # utils.save_stan_result(self.rbtl_hash, result)
+
+        # # Parse the result
         self._parse_rbtl_result(result)
 
     def _calculate_rbtl_uncertainties(self):
