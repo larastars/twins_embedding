@@ -125,7 +125,7 @@ class TwinsEmbeddingAnalysis:
             self.maximum_fluxerr = self.fluxerr[self.center_mask]
 
         self.print_verbose("Reading between the lines...")
-        cache_result, our_params,our_rbtl = self.read_between_the_lines()
+        cache_result, resuls, name = self.read_between_the_lines()
 
         # self.print_verbose("Building masks...")
         # self.build_masks()
@@ -146,7 +146,7 @@ class TwinsEmbeddingAnalysis:
         # self.residuals_salt = self.fit_salt_magnitude_residuals()
 
         # self.print_verbose("Done!")
-        return cache_result, our_params, our_rbtl
+        return cache_result, resuls, name
 
 
 
@@ -759,6 +759,27 @@ class TwinsEmbeddingAnalysis:
 
         return np.sum(0.5 * (scale_flux - mean_flux)**2 / (sigma_sq) + np.log(np.sqrt(sigma_sq)))
 
+    def negative_log_likelihood_multiple(self, params, max_flux, fluxerr, color_law):
+        dm, color = params[:len(max_flux)], params[len(max_flux):]
+        color_law = np.array(color_law).reshape(1, len(color_law))
+        color_law = np.repeat(color_law, len(max_flux), axis = 0)
+        
+        scale = 10**(0.4 * (dm + color * color_law.transpose()))
+        scale = scale.transpose()
+        scale_flux = max_flux * scale
+        scale_fluxerr = fluxerr * scale
+        mean_flux = np.mean(scale_flux, axis=0)
+        intrinsic_dispersion = np.std(scale_flux, axis=0) / mean_flux
+        sigma_sq = (intrinsic_dispersion * mean_flux)**2 + scale_fluxerr**2
+
+        loss_term = np.sum(0.5 * (scale_flux - mean_flux)**2 / (sigma_sq) + np.log(np.sqrt(sigma_sq)))
+
+        if np.isnan(loss_term):
+            return 1000
+        
+        return loss_term
+
+
     def read_between_the_lines(self, use_cache=True):
         """Run the read between the lines algorithm.
 
@@ -807,30 +828,21 @@ class TwinsEmbeddingAnalysis:
 
 
         #RBTL in python 
-       # self.fractional_dispersion = np.std(self.maximum_flux, axis = 0) / np.mean(self.maximum_flux, axis=0)
-        self.fractional_dispersion = cache_result["fractional_dispersion"]
-        mean_flux = cache_result["mean_flux"]
-        our_params = {'fractional_dispersion': self.fractional_dispersion,
-                        'mean_flux': mean_flux}
+        p0 = np.zeros([2, len(self.maximum_flux)])
+        #print(p0.shape)
+        p01, p02 = p0
+        #print(len(p01))
 
-        our_rbtl = {}
-        for i in range(len(self.maximum_flux)):
-            opt = minimize(self.negative_log_likelihood, 
-                    [0., 0.], 
-                    args = (self.maximum_flux[i],
-                        self.maximum_fluxerr[i],
-                        self.rbtl_color_law,
-                        mean_flux,
-                        self.fractional_dispersion
-                        )
-                    )
+        self.fractional_dispersion = np.std(self.maximum_flux, axis = 0) / np.mean(self.maximum_flux, axis=0)
+        mean_flux = np.mean(self.maximum_flux, axis=0)
+        opt = minimize(self.negative_log_likelihood_multiple,
+                np.zeros([2*len(self.maximum_flux)]),
+                args = (self.maximum_flux,
+                        self.maximum_fluxerr,
+                        self.rbtl_color_law))   
+        print(opt)
 
-            # if self.targets[i] in ('SNF20050728-006','SNF20050729-002','SNF20050821-007','SNF20050927-005',
-            #                         'SNF20051003-004','SNF20060511-014','SNF20060512-001','SNF20060512-002','SNF20060521-001','SNF20060521-008'):
-            
-            our_rbtl[self.targets[i]] = opt.x
-
-        return cache_result, our_params, our_rbtl
+        return cache_result, opt.x, self.targets
 
         # def stan_init():
         #     # Use the spectrum closest to maximum as a first guess of the
