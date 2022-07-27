@@ -125,7 +125,7 @@ class TwinsEmbeddingAnalysis:
             self.maximum_fluxerr = self.fluxerr[self.center_mask]
 
         self.print_verbose("Reading between the lines...")
-        cache_result, resuls, name = self.read_between_the_lines()
+        cache_result, our_params,our_rbtl = self.read_between_the_lines()
 
         # self.print_verbose("Building masks...")
         # self.build_masks()
@@ -146,7 +146,7 @@ class TwinsEmbeddingAnalysis:
         # self.residuals_salt = self.fit_salt_magnitude_residuals()
 
         # self.print_verbose("Done!")
-        return cache_result, resuls, name
+        return cache_result, our_params, our_rbtl
 
 
 
@@ -420,31 +420,24 @@ class TwinsEmbeddingAnalysis:
         print(len(self.wave))
         print(self.wave[0])
         print("\n")
-
         print("flux")
         print(len(self.flux))
         print(len(self.flux[0]))
         print(self.flux[0])
         print("\n")
-
         print("fluxerr")
         print(len(self.fluxerr))
         print(len(self.fluxerr[0]))
         print(self.fluxerr[0])
         print("\n")
-
         print("raw_spectra")
         print(len(self.raw_spectra))
         print(self.raw_spectra[0])
         print("\n")
-
-
         print("spectra")
         print(len(self.spectra))
         print(self.spectra[0])
         print("\n")
-
-
         print("center_mask")
         print(len(self.center_mask))
         print(self.center_mask[0])
@@ -454,18 +447,15 @@ class TwinsEmbeddingAnalysis:
         print(len(self.targets))
         print(self.targets[0])
         print("\n")
-
         print("target_map")
         print(len(self.target_map))
         print(self.target_map)
         print(self.target_map[0])
         print("\n")
-
         print("salt_phases")
         print(len(self.salt_phases))
         print(self.salt_phases[0])
         print("\n")
-
         print("salt_x1")
         print(len(self.salt_x1))
         print(self.salt_x1[0])
@@ -501,11 +491,9 @@ class TwinsEmbeddingAnalysis:
 
     def read_meta(self, key, center_only=True):
         """Read a key from the meta data of each spectrum/target
-
         This will first attempt to read the key in the spectrum object's meta
         data. If it isn't there, then it will try to read from the target
         instead.
-
         If center_only is True, then a single value is returned for each
         target, from the spectrum closest to the center of the range if
         applicable. Otherwise, the values will be returned for each spectrum in
@@ -589,12 +577,10 @@ class TwinsEmbeddingAnalysis:
         print(len(SNe_peak[1]))
         print(len(SNe_peak[1][0]))
         print('\n')
-
         print(len(mag))
         print(len(mag[1]))
         print(len(mag[1][0]))
         print('\n')
-
         print(len(self.flux)) #SNE 10
         print(len(self.flux[1])) #phase 1/2
         print(len(self.flux[1][0])) #spectrum 288
@@ -607,22 +593,18 @@ class TwinsEmbeddingAnalysis:
     
     def model_differential_evolution(self, use_cache=True):
         """Estimate the spectra for each of our SNe Ia at maximum light.
-
         This algorithm uses all targets with multiple spectra to model the differential
         evolution of Type Ia supernovae near maximum light. This method does not rely on
         knowing the underlying model of Type Ia supernovae and only models the
         differences. The model is generated in magnitude space, so anything static in
         between us and the supernova, like dust, does not affect the model.
-
         The fit is performed using Stan. We only use Stan as a minimizer here,
         and we do some analytic tricks inside to speed up the computation. Don't try to
         run this in sampling model, the analytic tricks will mess up the uncertainties
         of a Bayesian analysis!
-
         If use_cache is True, then the fitted model will be retrieved from a
         cache if it exists. Make sure to run with use_cache=False if making
         modifications to the model!
-
         If use_x1 is True, a SALT2 x1-dependent term will be included in the
         model.
         """
@@ -646,7 +628,7 @@ class TwinsEmbeddingAnalysis:
         if use_cache:
             cache_result = utils.load_stan_result(self.differential_evolution_hash)
           #  print("dte")
-            print(cache_result.keys())
+            #print(cache_result.keys())
             if cache_result is not None:
 
                 #new code 
@@ -759,33 +741,10 @@ class TwinsEmbeddingAnalysis:
 
         return np.sum(0.5 * (scale_flux - mean_flux)**2 / (sigma_sq) + np.log(np.sqrt(sigma_sq)))
 
-    def negative_log_likelihood_multiple(self, params, max_flux, fluxerr, color_law):
-        dm, color = params[:len(max_flux)], params[len(max_flux):]
-        color_law = np.array(color_law).reshape(1, len(color_law))
-        color_law = np.repeat(color_law, len(max_flux), axis = 0)
-        
-        scale = 10**(0.4 * (dm + color * color_law.transpose()))
-        scale = scale.transpose()
-        scale_flux = max_flux * scale
-        scale_fluxerr = fluxerr * scale
-        mean_flux = np.mean(scale_flux, axis=0)
-        intrinsic_dispersion = np.std(scale_flux, axis=0) / mean_flux
-        sigma_sq = (intrinsic_dispersion * mean_flux)**2 + scale_fluxerr**2
-
-        loss_term = np.sum(0.5 * (scale_flux - mean_flux)**2 / (sigma_sq) + np.log(np.sqrt(sigma_sq)))
-
-        if np.isnan(loss_term):
-            return 1000
-        
-        return loss_term
-
-
     def read_between_the_lines(self, use_cache=True):
         """Run the read between the lines algorithm.
-
         This algorithm estimates the brightnesses and colors of every spectrum
         and produces dereddened spectra.
-
         The fit is performed using Stan. We only use Stan as a minimizer here.
         """
         # Load the fiducial color law.
@@ -817,7 +776,7 @@ class TwinsEmbeddingAnalysis:
           #  print("rbtl")
           #  print(cache_result)
             if cache_result is not None:
-                # print(cache_result)
+                #print(cache_result)
                 # Found the cached result. Load it and don't redo the fit.
                 self._parse_rbtl_result(cache_result)
 
@@ -828,22 +787,50 @@ class TwinsEmbeddingAnalysis:
 
 
         #RBTL in python 
-        p0 = np.zeros([2, len(self.maximum_flux)])
-        #print(p0.shape)
-        p01, p02 = p0
-        #print(len(p01))
+       # self.fractional_dispersion = np.std(self.maximum_flux, axis = 0) / np.mean(self.maximum_flux, axis=0)
+        self.fractional_dispersion = cache_result["fractional_dispersion"]
+        mean_flux = cache_result["mean_flux"]
+        our_params = {'fractional_dispersion': self.fractional_dispersion,
+                        'mean_flux': mean_flux}
 
-        self.fractional_dispersion = np.std(self.maximum_flux, axis = 0) / np.mean(self.maximum_flux, axis=0)
-        mean_flux = np.mean(self.maximum_flux, axis=0)
-        opt = minimize(self.negative_log_likelihood_multiple,
-                np.zeros([2*len(self.maximum_flux)]),
-               #[0., 0.],
-                args = (self.maximum_flux,
-                        self.maximum_fluxerr,
-                        self.rbtl_color_law))   
-        # print(opt)
+        our_rbtl = {}
+        final = [] 
+        sigma_f_avg = []
+        for i in range(len(self.maximum_flux)):
+            opt = minimize(self.negative_log_likelihood, 
+                    [0., 0.], 
+                    args = (self.maximum_flux[i],
+                        self.maximum_fluxerr[i],
+                        self.rbtl_color_law,
+                        mean_flux,
+                        self.fractional_dispersion
+                        )
+                    )
 
-        return cache_result, opt.x, self.targets
+            # if self.targets[i] in ('SNF20050728-006','SNF20050729-002','SNF20050821-007','SNF20050927-005',
+            #                         'SNF20051003-004','SNF20060511-014','SNF20060512-001','SNF20060512-002','SNF20060521-001','SNF20060521-008'):
+            
+            f_model = mean_flux * 10 ** -0.4 *(opt.x[0] + opt.x[1]*self.rbtl_color_law)
+            sigma_f = np.std(self.maximum_flux - f_model)
+            sigma_f_avg.append(sigma_f)
+           
+            #final.append([opt.x[0],opt.x[1]])
+            our_rbtl[self.targets[i]] = opt.x
+
+        dm = [p[0] for p in list(our_rbtl.values())]
+
+         #dm, av
+        sigma_dm = np.std(dm)
+        print(sigma_dm)
+        print(np.mean(sigma_f_avg))
+        # print(len(self.maximum_flux))
+        # print(len(mean_flux))
+        # print(len(self.rbtl_color_law))
+        #sigma_f = (self.maximum_flux - )
+       # print(our_rbtl)
+       
+           
+        return cache_result, our_params, our_rbtl
 
         # def stan_init():
         #     # Use the spectrum closest to maximum as a first guess of the
@@ -974,7 +961,6 @@ class TwinsEmbeddingAnalysis:
     def generate_embedding(self, num_neighbors=None, num_components=-1, mask=None,
                            model=None, data=None):
         """Generate a manifold learning embedding.
-
         By default we use Isomap with hyperparameters as set in the settings, but
         this can be overridden by manually specifying any model that follows the
         sklearn API or hyperparameters.
@@ -1203,13 +1189,11 @@ class TwinsEmbeddingAnalysis:
                                  shuffle=False):
         """Find the best transformation of a set of indicators to reproduce a different
         indicator.
-
         The indicators can be either keys corresponding to columns in the
         self.indicators table or arrays of values directly. Masks will automatically be
         extracted if the indicators are `MaskedColumn` or `numpy.ma.masked_array`
         instances. A mask can also be explicitly passed to this function which will be
         used in addition to any extracted masks.
-
         Parameters
         ----------
         target_indicator : str or array
@@ -1226,7 +1210,6 @@ class TwinsEmbeddingAnalysis:
             If True, shuffle the reference indicators randomly before doing the
             transformation. This can be used to determine the significance of any
             relations. (default False)
-
         Returns
         -------
         explained_variance : float
@@ -1325,7 +1308,6 @@ class TwinsEmbeddingAnalysis:
 
     def _get_gp_data(self, kind="rbtl"):
         """Return the data needed for GP fits along with the corresponding masks.
-
         Parameters
         ----------
         kind : {'rbtl', 'salt', 'salt_raw'}
@@ -1333,7 +1315,6 @@ class TwinsEmbeddingAnalysis:
             - rbtl: RBTL magnitudes and colors.
             - salt: Corrected SALT2 magnitudes and colors.
             - salt_raw: Uncorrected SALT2 magnitudes and colors.
-
         Returns
         -------
         coordinates : numpy.array
@@ -1433,7 +1414,6 @@ class TwinsEmbeddingAnalysis:
                                            *covariate_slopes):
         """Evaluate SALT2 magnitude residuals for a given set of standardization
         parameters
-
         Parameters
         ----------
         additional_covariates : list of arrays
@@ -1450,7 +1430,6 @@ class TwinsEmbeddingAnalysis:
             Standardization coefficient for the SALT2 color parameter
         covariate_slopes : list
             Slopes for each of the additional covariates.
-
         Returns
         -------
         residuals : numpy.array
@@ -1500,7 +1479,6 @@ class TwinsEmbeddingAnalysis:
     def fit_salt_magnitude_residuals(self, mask=None, additional_covariates=[],
                                      bootstrap=False, verbosity=None):
         """Calculate SALT2 magnitude residuals
-
         This follows the standard procedure of estimating the alpha and beta correction
         parameters using an assumed intrinsic dispersion, then solving for the intrinsic
         dispersion that sets the chi-square to 1. We repeat this procedure until the
@@ -1648,14 +1626,12 @@ class TwinsEmbeddingAnalysis:
 
     def bootstrap_salt_magnitude_residuals(self, num_samples=100, *args, **kwargs):
         """Bootstrap the SALT2 magnitude residuals fit to get parameter uncertainties.
-
         Parameters
         ----------
         num_samples : int
             The number of bootstrapping samples to do.
         *args, **kwargs
             Additional parameters passed to calculate_salt_magnitude_residuals.
-
         Returns
         -------
         reference : dict
@@ -1716,21 +1692,16 @@ class TwinsEmbeddingAnalysis:
     def scatter(self, variable, mask=None, weak_mask=None, label=None, axis_1=0,
                 axis_2=1, axis_3=None, invert_colorbar=False, **kwargs):
         """Make a scatter plot of some variable against the Isomap coefficients
-
         variable is the values to use for the color axis of the plot.
-
         A boolean array can be specified for cut to specify which points to use in the
         plot. If cut is None, then the full variable list is used.
-
         The target variable can be passed with or without the cut already applied. This
         function will check and automatically apply it or ignore it so that the variable
         array has the same length as the coefficient arrays.
-
         Optionally, a weak cut can be performed where spectra not passing the cut are
         plotted as small points rather than being completely omitted. To do this,
         specify the "weak_cut" parameter with a boolean array that has the length of the
         the variable array after the base cut.
-
         Any kwargs are passed to plt.scatter directly.
         """
         use_embedding = self.embedding
@@ -1800,7 +1771,6 @@ class TwinsEmbeddingAnalysis:
                          discrete_color_map=None, invert_colorbar=False, **kwargs):
         """Scatter plot that shows three components simultaneously while preserving
         aspect ratios.
-
         The height of the figure will be adjusted automatically to produce the right
         aspect ratio.
         """
@@ -1986,7 +1956,6 @@ class TwinsEmbeddingAnalysis:
     def plot_flux(self, ax, flux, fluxerr=None, *args, c=None, label=None,
                   uncertainty_label=None, **kwargs):
         """Plot a spectrum.
-
         See settings.py for details about the normalization and labeling of spectra.
         """
         wave = self.wave
@@ -2047,7 +2016,6 @@ class TwinsEmbeddingAnalysis:
 
     def savefig(self, filename, figure=None, **kwargs):
         """Save a matplotlib figure
-
         Parameters
         ----------
         filename : str
@@ -2074,7 +2042,6 @@ class TwinsEmbeddingAnalysis:
 
     def latex_open(self, filename):
         """Open a given latex file for writing, and make directories if need be.
-
         Parameters
         ----------
         filename : str
@@ -2091,7 +2058,6 @@ class TwinsEmbeddingAnalysis:
 
 class TwinsEmbeddingModel():
     """A standalone implementation of the Twins Embedding model.
-
     This can be used to predict the flux of a supernova at any given coordinates in
     the Twins Embedding. The model will be loaded from data stored in the models
     directory.
