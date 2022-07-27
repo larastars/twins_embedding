@@ -817,7 +817,7 @@ class TwinsEmbeddingAnalysis:
           #  print("rbtl")
           #  print(cache_result)
             if cache_result is not None:
-                #print(cache_result)
+                # print(cache_result)
                 # Found the cached result. Load it and don't redo the fit.
                 self._parse_rbtl_result(cache_result)
 
@@ -837,10 +837,11 @@ class TwinsEmbeddingAnalysis:
         mean_flux = np.mean(self.maximum_flux, axis=0)
         opt = minimize(self.negative_log_likelihood_multiple,
                 np.zeros([2*len(self.maximum_flux)]),
+               #[0., 0.],
                 args = (self.maximum_flux,
                         self.maximum_fluxerr,
                         self.rbtl_color_law))   
-        print(opt)
+        # print(opt)
 
         return cache_result, opt.x, self.targets
 
