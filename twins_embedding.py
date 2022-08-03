@@ -527,8 +527,47 @@ class TwinsEmbeddingAnalysis:
         if self.settings['verbosity'] >= minimum_verbosity:
             print(*args)
 
+    def broken_function(self):
+        num_phase_coefficients = self.settings[
+            'differential_evolution_num_phase_coefficients'
+        ]
+
+        if num_phase_coefficients % 2 != 0:
+            raise Exception("ERROR: Must have an even number of phase " "coefficients.")
+
+        spectra_targets = [i for i in self.spectra]
+        spectra_target_counts = np.array(
+            [spectra_targets.count(i) for i in self.spectra]
+        )
+
+        phase_coefficients = np.zeros((num_spectra, num_phase_coefficients))
+   
+        for i, phase in enumerate(self.salt_phases):
+            phase_scale = np.abs(
+                (num_phase_coefficients / 2) * (phase / self.settings['phase_range'])
+            )
+
+            full_bins = int(np.floor(phase_scale))
+            remainder = phase_scale - full_bins
+
+            for j in range(full_bins + 1):
+                if j == full_bins:
+                    weight = remainder
+                else:
+                    weight = 1
+
+                if phase > 0:
+                    phase_bin = num_phase_coefficients // 2 + j
+                else:
+                    phase_bin = num_phase_coefficients // 2 - 1 - j
+
+
+                phase_coefficients[i, phase_bin] = weight
+
 
     def interpolate_spectra_to_peak(self, result):  
+
+        #equation 1 
         c1 = result["phase_slope"]   
         c2 = result["phase_quadratic"]
         
@@ -554,7 +593,16 @@ class TwinsEmbeddingAnalysis:
             m_zero = mag[i] - (p * c1) - (p**2 * c2)
             SNe_peak.append(np.array(m_zero))
 
+        #m peak mag space = SNe_peak
 
+
+        #equation 2 
+        #find m_gray
+        #check if cache has this value 
+        mu, sigma = 0, 0.02 # mean and standard deviation
+        m_gray = np.random.normal(mu, sigma**2, 1000)
+
+        #equation 3
         #convert from mag to flux
         SNe_flux = []
         SNe_flux_bin = [] 
@@ -562,14 +610,10 @@ class TwinsEmbeddingAnalysis:
         for i in range(len(SNe_peak)):
             SNe_flux_bin = [] 
             for j in range(len(SNe_peak[i])):
-                scalar_flux = 10**(-0.4*SNe_peak[i][j]) #-2.5 * math.log10(SNe_peak[i][j][k])
+                scalar_flux = 10**(-0.4*SNe_peak[i][j]+m_gray) #-2.5 * math.log10(SNe_peak[i][j][k])
                 SNe_flux_bin.append(scalar_flux)
             SNe_flux.append(SNe_flux_bin)
 
-        #find m_gray
-        #check if cachehas this value 
-        mu, sigma = 0, 0.02 # mean and standard deviation
-        N = np.random.normal(mu, sigma**2, 1000)
 
 
         """
@@ -639,6 +683,7 @@ class TwinsEmbeddingAnalysis:
                 #comment this out when removing the return 
                 self.maximum_flux = cache_result["maximum_flux"]
                 self.maximum_fluxerr = cache_result["maximum_fluxerr"]
+                print('new code')
 
             
                 return a, b
@@ -649,6 +694,7 @@ class TwinsEmbeddingAnalysis:
         num_phase_coefficients = self.settings[
             'differential_evolution_num_phase_coefficients'
         ]
+        print('old code')
 
         if num_phase_coefficients % 2 != 0:
             raise Exception("ERROR: Must have an even number of phase " "coefficients.")
@@ -738,6 +784,7 @@ class TwinsEmbeddingAnalysis:
         scale_flux = max_flux * scale
         scale_fluxerr = fluxerr * scale
         sigma_sq = (intrinsic_dispersion * mean_flux)**2 + scale_fluxerr**2
+    
 
         return np.sum(0.5 * (scale_flux - mean_flux)**2 / (sigma_sq) + np.log(np.sqrt(sigma_sq)))
 
@@ -791,7 +838,7 @@ class TwinsEmbeddingAnalysis:
         self.fractional_dispersion = cache_result["fractional_dispersion"]
         mean_flux = cache_result["mean_flux"]
         our_params = {'fractional_dispersion': self.fractional_dispersion,
-                        'mean_flux': mean_flux}
+                        'mean_flux': mean_flux, 'color_law':self.rbtl_color_law}
 
         our_rbtl = {}
         final = [] 
@@ -807,9 +854,6 @@ class TwinsEmbeddingAnalysis:
                         )
                     )
 
-            # if self.targets[i] in ('SNF20050728-006','SNF20050729-002','SNF20050821-007','SNF20050927-005',
-            #                         'SNF20051003-004','SNF20060511-014','SNF20060512-001','SNF20060512-002','SNF20060521-001','SNF20060521-008'):
-            
             f_model = mean_flux * 10 ** -0.4 *(opt.x[0] + opt.x[1]*self.rbtl_color_law)
             sigma_f = np.std(self.maximum_flux - f_model)
             sigma_f_avg.append(sigma_f)
