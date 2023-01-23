@@ -683,10 +683,10 @@ class TwinsEmbeddingAnalysis:
                 #comment this out when removing the return 
                 self.maximum_flux = cache_result["maximum_flux"]
                 self.maximum_fluxerr = cache_result["maximum_fluxerr"]
-                print('new code')
-
+       
+                return 
             
-                return a, b
+                #return a, b
 
         num_targets = len(self.targets)
         num_spectra = len(self.flux)
@@ -694,7 +694,7 @@ class TwinsEmbeddingAnalysis:
         num_phase_coefficients = self.settings[
             'differential_evolution_num_phase_coefficients'
         ]
-        print('old code')
+
 
         if num_phase_coefficients % 2 != 0:
             raise Exception("ERROR: Must have an even number of phase " "coefficients.")
@@ -779,11 +779,12 @@ class TwinsEmbeddingAnalysis:
 
 
     def negative_log_likelihood(self, params, max_flux, fluxerr, color_law, mean_flux, intrinsic_dispersion):
+        print("here 3")
         dm, color = params
-        scale = 10**(0.4 * (dm + color * color_law))
-        scale_flux = max_flux * scale
+        scale = 10**(-0.4 * (dm + (color * color_law)))
+        scale_flux = mean_flux * scale
         scale_fluxerr = fluxerr * scale
-        sigma_sq = (intrinsic_dispersion * mean_flux)**2 + scale_fluxerr**2
+        sigma_sq = (intrinsic_dispersion * scale_flux)**2 + fluxerr**2
     
 
         return np.sum(0.5 * (scale_flux - mean_flux)**2 / (sigma_sq) + np.log(np.sqrt(sigma_sq)))
@@ -821,7 +822,7 @@ class TwinsEmbeddingAnalysis:
 
             cache_result = utils.load_stan_result(self.rbtl_hash)
           #  print("rbtl")
-          #  print(cache_result)
+       
             if cache_result is not None:
                 #print(cache_result)
                 # Found the cached result. Load it and don't redo the fit.
@@ -838,12 +839,16 @@ class TwinsEmbeddingAnalysis:
         self.fractional_dispersion = cache_result["fractional_dispersion"]
         mean_flux = cache_result["mean_flux"]
         our_params = {'fractional_dispersion': self.fractional_dispersion,
-                        'mean_flux': mean_flux, 'color_law':self.rbtl_color_law}
+                        'mean_flux': mean_flux, 'color_law':self.rbtl_color_law, 'max_flux':self.maximum_flux,
+                        'model_flux': cache_result['model_flux'], 'model_fluxerr': cache_result['model_fluxerr']}
 
         our_rbtl = {}
         final = [] 
         sigma_f_avg = []
+        print("here 1")
         for i in range(len(self.maximum_flux)):
+            print("here 2")
+
             opt = minimize(self.negative_log_likelihood, 
                     [0., 0.], 
                     args = (self.maximum_flux[i],
@@ -859,14 +864,18 @@ class TwinsEmbeddingAnalysis:
             sigma_f_avg.append(sigma_f)
            
             #final.append([opt.x[0],opt.x[1]])
-            our_rbtl[self.targets[i]] = opt.x
+            curr = [opt.x,self.maximum_flux[i]]
+            our_rbtl[self.targets[i]] = curr
+            
+
+ #           our_rbtl[self.targets[i]] = self.maximum_flux[i]
 
         dm = [p[0] for p in list(our_rbtl.values())]
 
          #dm, av
         sigma_dm = np.std(dm)
-        print(sigma_dm)
-        print(np.mean(sigma_f_avg))
+        print("sigma dm = ", sigma_dm)
+        print("sigma f_average = ", np.mean(sigma_f_avg))
         # print(len(self.maximum_flux))
         # print(len(mean_flux))
         # print(len(self.rbtl_color_law))
